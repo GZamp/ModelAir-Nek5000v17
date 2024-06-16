@@ -1,0 +1,360 @@
+c-----------------------------------------------------------------------
+c
+c     user subroutines required by nek5000
+c
+c     Parameters used by this set of subroutines:
+
+c-----------------------------------------------------------------------
+      subroutine uservp (ix,iy,iz,ieg)
+      include 'SIZE'
+      include 'NEKUSE'          ! UDIFF, UTRANS
+
+      UDIFF =0.0
+      UTRANS=0.0
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine userf  (ix,iy,iz,ieg)
+      
+      include 'SIZE'
+      include 'NEKUSE'          ! FF[XYZ]
+      include 'PARALLEL'
+      include 'TRIPD'
+
+      integer ix,iy,iz,ieg,iel
+      real*8 uss(lx1,ly1,lz1,lelv), vss(lx1,ly1,lz1,lelv)
+
+      real*8 usponge(lx1,ly1,lz1,lelv),
+     $     vsponge(lx1,ly1,lz1,lelv), wsponge(lx1,ly1,lz1,lelv)
+
+      COMMON /SPONGE/ usponge,vsponge,wsponge,uss,vss
+
+      ffx = 0.0
+      ffy = 0.0
+      ffz = 0.0
+
+      iel = gllel(ieg)
+      call trip_comp(ix,iy,iz,iel)
+
+      uss(ix,iy,iz,iel) = ffx 
+      vss(ix,iy,iz,iel) = ffy    
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine userq  (ix,iy,iz,ieg)
+      include 'SIZE'
+      include 'NEKUSE'          ! QVOL
+
+      QVOL   = 0.0
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine userchk
+      implicit none
+      include 'SIZE'            !
+      include 'TSTEP'           ! ISTEP, lastep, time
+      include 'INPUT'           ! IF3D, PARAM
+      include 'SOLN'            ! T
+      include 'MASS'            ! BM1 for lambda2
+      include 'USERPAR'         ! L2FREQ
+      include 'TRIPD'
+      include 'CHKPOINT'
+
+      integer lt
+      parameter (lt = lx1*ly1*lz1*lelv)
+
+      real*8 usponge(lx1,ly1,lz1,lelv),
+     $     vsponge(lx1,ly1,lz1,lelv), wsponge(lx1,ly1,lz1,lelv)
+
+      real*8 uss(lx1,ly1,lz1,lelv), vss(lx1,ly1,lz1,lelv)
+      
+      COMMON /SPONGE/ usponge,vsponge,wsponge,uss,vss
+
+      logical exist_rst
+      
+c      if (ISTEP.eq.0) then
+!    Read initial mesh 
+cc         inquire(file='duct.IC',exist=exist_rst)
+cc         if (exist_rst) then
+cc            if(nid.eq.0)then
+cc               write(*,*) '------------------------------------'
+cc               write(*,*) 'READ  IC  as the Fringe input'
+cc               write(*,*) '------------------------------------'
+cc            end if
+cc            initc(1) = 'duct.IC'
+cc            call setics
+cc            call opcopy(usponge,vsponge,wsponge,vx,vy,vz)
+cc         end if
+!     Check for restart files
+c         CHKPTSTEP=uparam(6)
+c         if (uparam(4).eq.1) then
+c            IFCHKPTRST=.TRUE.
+c         else
+c            IFCHKPTRST=.FALSE.
+c         endif
+c      endif
+            
+c      call checkpoint           ! Restart check
+      
+!     start framework
+      if (ISTEP.eq.0) then
+         call frame_start
+!     set volume flow parameters
+cc         param(54) = uparam(1)
+cc         param(55) = uparam(2)
+      endif
+
+!     monitor simulation
+      call frame_monitor
+      
+! Calculate and output Lambda2
+!-------------------------------------------------- 
+      IFTO = .TRUE.
+      L2FREQ = uparam(3)
+      if (mod(ISTEP,L2FREQ).eq.0) then
+         if (NID.eq.0) write(6,*) ISTEP,IOSTEP,TIME,' compute lambda2'
+         call lambda2(T(1,1,1,1,1))
+         call col2  (T(1,1,1,1,1),bm1,lt)
+         call dssum (T(1,1,1,1,1),nx1,ny1,nz1)
+         call col2  (T(1,1,1,1,1),binvm1,lt)
+         call outpost(vx,vy,vz,pr,t,'la2')
+cc         call outpost(vx,vy,vz,pr,uss,'trx')
+cc         call outpost(vx,vy,vz,pr,vss,'try')
+      endif
+!--------------------------------------------------
+
+!     for tripping
+      call trip_update
+      
+!     for statistics
+      call stat_avg
+
+!     finalise framework
+      if (ISTEP.eq.NSTEPS.or.LASTEP.eq.1) then
+         call frame_end
+      endif
+     
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine userbc (ix,iy,iz,iside,eg)
+      include 'SIZE'
+      include 'NEKUSE'          ! UX, UY, UZ, TEMP, X, Y
+
+      real p1u,p2u,p3u,p4u,p5u,p6u
+      real q1u,q2u,q3u,q4u,q5u
+      real p1v,p2v,p3v,p4v,p5v,p6v,p7v,p8v,p9v,p10v
+      real U0,H,H05
+
+      U0 = 1.0
+      H = 2.0
+      H05 = H/2
+      
+      p1u=1.043859752003037
+      p2u=-0.879255828282237
+      p3u=1.045887359703764
+      p4u=-0.653434808054355
+      p5u=0.410640823058595
+      p6u=-2.240523510987333e-6
+      q1u=-0.580873707235080
+      q2u=0.246614482220227
+      q3u=0.401869743549853
+      q4u=-0.277442706408114
+      q5u=0.177617669502105
+      p1v=0.002503506205728
+      p2v=-0.024054121053817
+      p3v=0.096492194127779
+      p4v=-0.207903437792773
+      p5v=0.256071279073753
+      p6v=-0.174195998511104
+      p7v=0.054164053166120
+      p8v=-0.002308356462083
+      p9v=4.279934606878054e-4
+      p10v=-3.423210591087970e-6
+      
+      ux=(p1u*y**5+p2u*y**4+p3u*y**3+p4u*y**2+p5u*y+p6u)/
+     &     (y**5+q1u*y**4+q2u*y**3+q3u*y**2+q4u*y+q5u)
+      uy=p1v*y**9+p2v*y**8+p3v*y**7+p4v*y**6+p5v*y**5+p6v*y**4+p7v*y**3+
+     &     +p8v*y**2+p9v*y+p10v
+      uz=0.0
+      
+c      if ( y.le.1 ) then
+c         ux = (1/H05**2)*y*(H-y)*U0
+c      else
+c         ux = 1
+c      endif
+c      uy=0.0
+c      uz=0.0
+            
+c     no temperature this time
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine useric (ix,iy,iz,ieg)
+      include 'SIZE'
+      include 'NEKUSE'          ! UX, UY, UZ, TEMP, Z
+      include 'PARALLEL'
+
+      real p1u,p2u,p3u,p4u,p5u,p6u
+      real q1u,q2u,q3u,q4u,q5u
+      real p1v,p2v,p3v,p4v,p5v,p6v,p7v,p8v,p9v,p10v
+      real U0,H,H05
+
+      U0 = 1.0
+      H = 2.0
+      H05 = H/2
+      
+      p1u=1.043859752003037
+      p2u=-0.879255828282237
+      p3u=1.045887359703764
+      p4u=-0.653434808054355
+      p5u=0.410640823058595
+      p6u=-2.240523510987333e-6
+      q1u=-0.580873707235080
+      q2u=0.246614482220227
+      q3u=0.401869743549853
+      q4u=-0.277442706408114
+      q5u=0.177617669502105
+      p1v=0.002503506205728
+      p2v=-0.024054121053817
+      p3v=0.096492194127779
+      p4v=-0.207903437792773
+      p5v=0.256071279073753
+      p6v=-0.174195998511104
+      p7v=0.054164053166120
+      p8v=-0.002308356462083
+      p9v=4.279934606878054e-4
+      p10v=-3.423210591087970e-6
+      
+      ux=(p1u*y**5+p2u*y**4+p3u*y**3+p4u*y**2+p5u*y+p6u)/
+     &     (y**5+q1u*y**4+q2u*y**3+q3u*y**2+q4u*y+q5u)
+      uy=p1v*y**9+p2v*y**8+p3v*y**7+p4v*y**6+p5v*y**5+p6v*y**4+p7v*y**3+
+     &     +p8v*y**2+p9v*y+p10v
+      uz=0.0
+      
+c      if ( y.le.1 ) then
+c         ux = (1/H05**2)*y*(H-y)*U0
+c      else
+c         ux = 1
+c      endif
+c      uy=0.0
+c      uz=0.0
+            
+c     no temperature this time
+      
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine usrdat
+      include 'SIZE'
+      include 'TOTAL'
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine usrdat2
+      include 'SIZE'
+      include 'TOTAL'
+
+c      do iel=1,nelv
+c         do ifc=1,2*ndim
+c            id_face = bc(5,ifc,iel,1)
+c            if (id_face.eq.1) then
+c               write(*,*) 'F1:',cbc(ifc,iel,1)
+c            elseif (id_face.eq.2) then
+c               write(*,*) 'F2:',cbc(ifc,iel,1)
+c            elseif (id_face.eq.3) then
+c               write(*,*) 'F3:',cbc(ifc,iel,1)
+c            elseif (id_face.eq.4) then
+c               write(*,*) 'F4:',cbc(ifc,iel,1)
+c            elseif (id_face.eq.5) then
+c               write(*,*) 'F5:',cbc(ifc,iel,1)
+c            elseif (id_face.eq.6) then
+c               write(*,*) 'F6:',cbc(ifc,iel,1)
+c            elseif (id_face.eq.7) then
+c               write(*,*) 'F7:',cbc(ifc,iel,1)
+c            endif
+c         enddo
+c      enddo
+
+      do iel=1,nelv
+         do ifc=1,2*ndim
+            id_face = bc(5,ifc,iel,1)
+cc            if (id_face.eq.1) then
+cc               cbc(ifc,iel,1) = 'v  '
+cc            elseif (id_face.eq.2) then
+cc               cbc(ifc,iel,1) = 'O  '
+            if (id_face.eq.4) then
+               cbc(ifc,iel,1) = 'ON '
+            endif
+         enddo
+      enddo
+
+      do iel=1,nelv
+         do ifc=1,2*ndim
+            id_face = bc(5,ifc,iel,1)
+            if (id_face.eq.1) then
+               write(*,*) 'F1:',cbc(ifc,iel,1)
+            elseif (id_face.eq.2) then
+               write(*,*) 'F2:',cbc(ifc,iel,1)
+            elseif (id_face.eq.3) then
+               write(*,*) 'F3:',cbc(ifc,iel,1)
+            elseif (id_face.eq.4) then
+               write(*,*) 'F4:',cbc(ifc,iel,1)
+            elseif (id_face.eq.5) then
+               write(*,*) 'F5:',cbc(ifc,iel,1)
+            elseif (id_face.eq.6) then
+               write(*,*) 'F6:',cbc(ifc,iel,1)
+            elseif (id_face.eq.7) then
+               write(*,*) 'F7:',cbc(ifc,iel,1)
+            endif
+         enddo
+      enddo
+      
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine usrdat3
+      include 'SIZE'
+      include 'INPUT'
+      include 'NEKUSE'
+      
+      return
+      end
+c-----------------------------------------------------------------------  
+      subroutine user_ref_reinit
+      implicit none
+
+      call trip_reset
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine user_ref_makef
+      implicit none
+
+      call trip_frcs_get(.false.)
+
+      return
+      end
+c-----------------------------------------------------------------------
+
+
+c automatically added by makenek
+      subroutine usrsetvert(glo_num,nel,nx,ny,nz) ! to modify glo_num
+      integer*8 glo_num(1)
+
+      return
+      end
+
+c automatically added by makenek
+      subroutine userqtl
+
+      call userqtl_scig
+
+      return
+      end

@@ -1,0 +1,23 @@
+#!/bin/bash
+export CASE="duct"
+export SOURCE_ROOT="/cfs/klemming/projects/snic/kthmech/rvinuesa/AMR_TEST/Nek5000_framework"
+export FC="ftn"
+export CC="cc"
+export CFLAGS="-D_Float128=__float128"
+export PPLIST=""
+export USR="frame.o frame_usr.o io_tools_block.o io_tools.o mntrlog_block.o mntrlog.o mntrtmr_block.o mntrtmr.o rprm_block.o rprm.o map2D.o stat.o stat_IO.o trip.o"
+
+for il in "$@"
+do
+case $il in
+	--clean)
+		${SOURCE_ROOT}/bin/makenek clean
+		shift
+		;;
+	--compile)
+                ${SOURCE_ROOT}/bin/makenek ${CASE}
+		shift
+		;;
+esac
+done
+

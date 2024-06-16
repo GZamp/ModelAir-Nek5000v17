@@ -1,0 +1,33 @@
+#!/bin/bash
+
+# for dardel: 
+# ml swap PrgEnv-cray/8.1.0 PrgEnv-gnu/8.1.0
+# (also load the compiler?)
+
+
+export CASE="duct"
+export SOURCE_ROOT="../../Nek5000_framework"
+export FC="ftn"
+export CC="cc"
+#export CFLAGS="-std=legacy -mcmodel=large"
+#export FFLAGS="-std=legacy -fallow-argument-mismatch -O2 -mcmodel=large"
+export CFLAGS="-std=legacy"
+export FFLAGS="-std=legacy"
+
+export PPLIST=""
+export USR="frame.o frame_usr.o io_tools_block.o io_tools.o mntrlog_block.o mntrlog.o mntrtmr_block.o mntrtmr.o rprm_block.o rprm.o map2D.o stat.o stat_IO.o chkpoint.o chkpt_mstp.o trip.o"
+
+for il in "$@"
+do
+case $il in
+	--clean)
+		${SOURCE_ROOT}/bin/makenek clean
+		shift
+		;;
+	--compile)
+                ${SOURCE_ROOT}/bin/makenek ${CASE}
+		shift
+		;;
+esac
+done
+
